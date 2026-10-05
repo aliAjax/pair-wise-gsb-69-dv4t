@@ -1,0 +1,437 @@
+[
+  {
+    "id": "CHG-24031",
+    "title": "华东一区核心交换网升级",
+    "summary": "升级 A3/A4 机柜上联交换机固件，调整核心链路聚合参数。",
+    "owner": "周启明",
+    "onCall": ["周启明", "林珂", "赵宇"],
+    "status": "submitted",
+    "risk": "critical",
+    "resources": [
+      {
+        "id": "dc-east-1",
+        "name": "华东一区",
+        "type": "datacenter",
+        "critical": true,
+        "dependencies": []
+      },
+      {
+        "id": "rack-a3",
+        "name": "A3 机柜",
+        "type": "rack",
+        "critical": false,
+        "dependencies": ["dc-east-1"]
+      },
+      {
+        "id": "sw-core-a",
+        "name": "核心交换机 A",
+        "type": "network",
+        "critical": true,
+        "dependencies": ["rack-a3", "rack-a4"]
+      },
+      {
+        "id": "svc-orders",
+        "name": "订单网关",
+        "type": "service",
+        "critical": true,
+        "dependencies": ["sw-core-a", "storage-prod"]
+      }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "phase": "prepare",
+        "title": "确认主备链路健康状态",
+        "owner": "林珂",
+        "durationMinutes": 20,
+        "command": "show lacp neighbor; show interface status",
+        "completed": true,
+        "completedAt": "2026-09-28T10:12:00.000Z"
+      },
+      {
+        "id": "step-2",
+        "phase": "execute",
+        "title": "切换流量至 B 平面",
+        "owner": "周启明",
+        "durationMinutes": 15,
+        "command": "switchover --plane B --confirm",
+        "completed": false
+      },
+      {
+        "id": "step-3",
+        "phase": "verify",
+        "title": "核对订单网关成功率",
+        "owner": "赵宇",
+        "durationMinutes": 30,
+        "command": "curl -s /health/orders | jq '.successRate'",
+        "completed": false
+      },
+      {
+        "id": "step-r1",
+        "phase": "rollback",
+        "title": "恢复原固件并切回 A 平面",
+        "owner": "",
+        "durationMinutes": 35,
+        "command": "",
+        "completed": false
+      }
+    ],
+    "window": {
+      "start": "2026-09-30T01:00",
+      "end": "2026-09-30T05:00",
+      "observationWindowMinutes": 20,
+      "blackoutProtected": false
+    },
+    "approvals": [
+      {
+        "stage": "network",
+        "state": "approved",
+        "approver": "陆成",
+        "comment": "链路切换窗口和验证点符合要求。",
+        "decidedAt": "2026-09-29T02:15:00.000Z"
+      },
+      {
+        "stage": "system",
+        "state": "pending"
+      },
+      {
+        "stage": "security",
+        "state": "pending"
+      },
+      {
+        "stage": "business",
+        "state": "pending"
+      }
+    ],
+    "deviations": [],
+    "audit": [
+      {
+        "id": "audit-1",
+        "timestamp": "2026-09-29T02:15:00.000Z",
+        "actor": "陆成",
+        "action": "阶段会签",
+        "detail": "网络负责人已批准。"
+      },
+      {
+        "id": "audit-2",
+        "timestamp": "2026-09-28T09:40:00.000Z",
+        "actor": "周启明",
+        "action": "提交审批",
+        "detail": "提交网络、系统、安全、业务顺序会签。"
+      }
+    ],
+    "createdAt": "2026-09-27T08:20:00.000Z",
+    "updatedAt": "2026-09-29T02:15:00.000Z"
+  },
+  {
+    "id": "CHG-24028",
+    "title": "结算存储扩容",
+    "summary": "为结算集群增加 2 个存储节点并在线迁移数据。",
+    "owner": "陈若宁",
+    "onCall": ["陈若宁", "高巍"],
+    "status": "executing",
+    "risk": "high",
+    "resources": [
+      {
+        "id": "rack-b2",
+        "name": "B2 机柜",
+        "type": "rack",
+        "critical": false,
+        "dependencies": ["dc-east-2"]
+      },
+      {
+        "id": "storage-prod",
+        "name": "结算生产存储",
+        "type": "storage",
+        "critical": true,
+        "dependencies": ["rack-b2"]
+      },
+      {
+        "id": "svc-settle",
+        "name": "结算服务",
+        "type": "service",
+        "critical": true,
+        "dependencies": ["storage-prod"]
+      }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "phase": "prepare",
+        "title": "检查存储池余量",
+        "owner": "高巍",
+        "durationMinutes": 15,
+        "command": "ceph df detail",
+        "completed": true,
+        "completedAt": "2026-09-29T00:15:00.000Z"
+      },
+      {
+        "id": "step-2",
+        "phase": "execute",
+        "title": "加入新节点并重平衡",
+        "owner": "陈若宁",
+        "durationMinutes": 70,
+        "command": "ceph orch daemon add osd node-b2-07 node-b2-08",
+        "completed": false
+      },
+      {
+        "id": "step-3",
+        "phase": "verify",
+        "title": "验证副本一致性和延迟",
+        "owner": "陈若宁",
+        "durationMinutes": 40,
+        "command": "scripts/check-settle-storage.sh",
+        "completed": false
+      },
+      {
+        "id": "step-r1",
+        "phase": "rollback",
+        "title": "驱逐新增节点并恢复权重",
+        "owner": "陈若宁",
+        "durationMinutes": 45,
+        "command": "ceph osd crush reweight node-b2-07 0",
+        "completed": false
+      }
+    ],
+    "window": {
+      "start": "2026-09-29T00:00",
+      "end": "2026-09-29T04:00",
+      "observationWindowMinutes": 45,
+      "blackoutProtected": false
+    },
+    "approvals": [
+      {
+        "stage": "network",
+        "state": "frozen",
+        "approver": "陆成",
+        "comment": "机柜上联端口无冲突。",
+        "decidedAt": "2026-09-28T06:10:00.000Z"
+      },
+      {
+        "stage": "system",
+        "state": "frozen",
+        "approver": "宋海",
+        "comment": "容量和回滚步骤符合要求。",
+        "decidedAt": "2026-09-28T07:32:00.000Z"
+      },
+      {
+        "stage": "security",
+        "state": "frozen",
+        "approver": "王珊",
+        "comment": "数据不落新区域，同意执行。",
+        "decidedAt": "2026-09-28T08:04:00.000Z"
+      },
+      {
+        "stage": "business",
+        "state": "frozen",
+        "approver": "韩璐",
+        "comment": "夜间结算批次已延期。",
+        "decidedAt": "2026-09-28T08:40:00.000Z"
+      }
+    ],
+    "deviations": [
+      {
+        "id": "dev-1",
+        "recordedAt": "2026-09-29T00:42:00.000Z",
+        "owner": "陈若宁",
+        "description": "node-b2-08 上线速度低于基线，暂停重平衡并检查网卡。",
+        "decision": "pause"
+      }
+    ],
+    "audit": [
+      {
+        "id": "audit-1",
+        "timestamp": "2026-09-29T00:42:00.000Z",
+        "actor": "陈若宁",
+        "action": "记录执行偏离",
+        "detail": "暂停重平衡，等待网络抖动恢复。"
+      },
+      {
+        "id": "audit-2",
+        "timestamp": "2026-09-29T00:02:00.000Z",
+        "actor": "陈若宁",
+        "action": "开始执行",
+        "detail": "审批冻结，进入执行状态。"
+      }
+    ],
+    "createdAt": "2026-09-26T03:22:00.000Z",
+    "updatedAt": "2026-09-29T00:42:00.000Z"
+  },
+  {
+    "id": "CHG-24022",
+    "title": "风控规则引擎证书轮换",
+    "summary": "轮换风控网关双向 TLS 证书并更新调用方信任链。",
+    "owner": "许月",
+    "onCall": ["许月", "李承"],
+    "status": "draft",
+    "risk": "medium",
+    "resources": [
+      {
+        "id": "svc-risk",
+        "name": "风控网关",
+        "type": "service",
+        "critical": true,
+        "dependencies": []
+      },
+      {
+        "id": "rack-c1",
+        "name": "C1 机柜",
+        "type": "rack",
+        "critical": false,
+        "dependencies": []
+      }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "phase": "execute",
+        "title": "下发新证书",
+        "owner": "许月",
+        "durationMinutes": 20,
+        "command": "kubectl apply -f cert-rotation.yaml",
+        "completed": false
+      },
+      {
+        "id": "step-2",
+        "phase": "verify",
+        "title": "验证双向 TLS 握手",
+        "owner": "李承",
+        "durationMinutes": 20,
+        "command": "scripts/verify-mtls.sh risk-gateway",
+        "completed": false
+      },
+      {
+        "id": "step-r1",
+        "phase": "rollback",
+        "title": "恢复旧证书",
+        "owner": "许月",
+        "durationMinutes": 15,
+        "command": "kubectl apply -f cert-previous.yaml",
+        "completed": false
+      }
+    ],
+    "window": {
+      "start": "2026-10-02T02:00",
+      "end": "2026-10-02T03:00",
+      "observationWindowMinutes": 30,
+      "blackoutProtected": false
+    },
+    "approvals": [
+      {
+        "stage": "network",
+        "state": "pending"
+      },
+      {
+        "stage": "system",
+        "state": "pending"
+      },
+      {
+        "stage": "security",
+        "state": "pending"
+      },
+      {
+        "stage": "business",
+        "state": "pending"
+      }
+    ],
+    "deviations": [],
+    "audit": [
+      {
+        "id": "audit-1",
+        "timestamp": "2026-09-28T11:32:00.000Z",
+        "actor": "许月",
+        "action": "创建草稿",
+        "detail": "创建证书轮换变更草稿。"
+      }
+    ],
+    "createdAt": "2026-09-28T11:32:00.000Z",
+    "updatedAt": "2026-09-28T11:32:00.000Z"
+  },
+  {
+    "id": "CHG-24018",
+    "title": "日志平台索引模板切换",
+    "summary": "切换日志平台索引模板并保留双写 24 小时。",
+    "owner": "杜衡",
+    "onCall": ["杜衡"],
+    "status": "completed",
+    "risk": "low",
+    "resources": [
+      {
+        "id": "svc-log",
+        "name": "统一日志平台",
+        "type": "service",
+        "critical": false,
+        "dependencies": []
+      }
+    ],
+    "steps": [
+      {
+        "id": "step-1",
+        "phase": "execute",
+        "title": "启用索引模板双写",
+        "owner": "杜衡",
+        "durationMinutes": 25,
+        "command": "logctl template switch --dual-write",
+        "completed": true,
+        "completedAt": "2026-09-27T02:25:00.000Z"
+      },
+      {
+        "id": "step-r1",
+        "phase": "rollback",
+        "title": "关闭双写并恢复旧模板",
+        "owner": "杜衡",
+        "durationMinutes": 15,
+        "command": "logctl template rollback",
+        "completed": false
+      }
+    ],
+    "window": {
+      "start": "2026-09-27T02:00",
+      "end": "2026-09-27T03:00",
+      "observationWindowMinutes": 60,
+      "blackoutProtected": false
+    },
+    "approvals": [
+      {
+        "stage": "network",
+        "state": "frozen",
+        "approver": "陆成",
+        "comment": "无网络影响。",
+        "decidedAt": "2026-09-26T05:20:00.000Z"
+      },
+      {
+        "stage": "system",
+        "state": "frozen",
+        "approver": "宋海",
+        "comment": "同意执行。",
+        "decidedAt": "2026-09-26T05:42:00.000Z"
+      },
+      {
+        "stage": "security",
+        "state": "frozen",
+        "approver": "王珊",
+        "comment": "日志字段无新增敏感项。",
+        "decidedAt": "2026-09-26T06:01:00.000Z"
+      },
+      {
+        "stage": "business",
+        "state": "frozen",
+        "approver": "韩璐",
+        "comment": "窗口不影响在售业务。",
+        "decidedAt": "2026-09-26T06:14:00.000Z"
+      }
+    ],
+    "deviations": [],
+    "audit": [
+      {
+        "id": "audit-1",
+        "timestamp": "2026-09-27T03:05:00.000Z",
+        "actor": "杜衡",
+        "action": "执行完成",
+        "detail": "观察期内日志写入正常。"
+      }
+    ],
+    "createdAt": "2026-09-25T08:00:00.000Z",
+    "updatedAt": "2026-09-27T03:05:00.000Z"
+  }
+]

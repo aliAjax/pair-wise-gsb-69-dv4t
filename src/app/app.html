@@ -1,0 +1,32 @@
+<div class="app-shell">
+  <header class="app-header">
+    <a class="brand" routerLink="/">
+      <span class="brand-mark">DC</span>
+      <span>
+        <strong>数据中心变更审阅</strong>
+        <small>Window & Rollback Review</small>
+      </span>
+    </a>
+    <nav aria-label="主导航">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">
+        变更工作台
+      </a>
+      <a routerLink="/changes/new" routerLinkActive="active">新建变更</a>
+    </nav>
+    <div class="header-status">
+      <span class="status-dot"></span>
+      <span>{{ changes().length }} 条记录</span>
+      <strong>本地持久化</strong>
+    </div>
+  </header>
+
+  <div class="context-bar">
+    <span>生产变更管理</span>
+    <span>顺序会签：网络 → 系统 → 安全 → 业务</span>
+    <span class="right">审批执行后自动冻结</span>
+  </div>
+
+  <main class="app-content">
+    <router-outlet />
+  </main>
+</div>

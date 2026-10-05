@@ -1,0 +1,38 @@
+html {
+  color-scheme: light;
+}
+
+body {
+  min-width: 360px;
+  margin: 0;
+  color: #1b1b1b;
+  background: #f5f6f7;
+  font-family:
+    "Noto Sans SC",
+    "PingFang SC",
+    "Microsoft YaHei",
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.btn cds-icon {
+  margin-right: 5px;
+}
+
+@media (max-width: 640px) {
+  .clr-form-control {
+    width: 100%;
+  }
+}
