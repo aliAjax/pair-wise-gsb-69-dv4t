@@ -1,17 +1,12 @@
 import { DatePipe, NgClass } from '@angular/common';
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ClarityModule } from '@clr/angular';
 import { Store } from '@ngrx/store';
 import { AuditTrailComponent } from '../../components/audit-trail/audit-trail.component';
 import { DependencyGraphComponent } from '../../components/dependency-graph/dependency-graph.component';
+import { RollbackDrillComponent } from '../../components/rollback-drill/rollback-drill.component';
 import { ValidationPanelComponent } from '../../components/validation-panel/validation-panel.component';
 import { WindowGanttComponent } from '../../components/window-gantt/window-gantt.component';
 import {
@@ -29,8 +24,10 @@ import {
 import { ChangeRequestService } from '../../services/change-request.service';
 import { ChangeRequestActions } from '../../store/change-request.actions';
 import { selectAllChanges } from '../../store/change-request.selectors';
+import { selectExecutionGateByChangeId } from '../../store/rollback-drill.selectors';
 
-type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval' | 'audit';
+type DetailTab =
+  'overview' | 'dependency' | 'window' | 'drill' | 'execution' | 'approval' | 'audit';
 
 @Component({
   selector: 'app-change-detail',
@@ -45,6 +42,7 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
     DependencyGraphComponent,
     ValidationPanelComponent,
     WindowGanttComponent,
+    RollbackDrillComponent,
   ],
   template: `
     @if (change(); as item) {
@@ -86,6 +84,9 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
             {{ tab.label }}
             @if (tab.id === 'approval' && pendingStage(); as stage) {
               <span class="nav-badge">{{ stageLabel(stage) }}</span>
+            }
+            @if (tab.id === 'drill' && gate().version?.gateState === 'legacy_backfill') {
+              <span class="nav-badge warn-badge">凭证待补</span>
             }
           </button>
         }
@@ -159,7 +160,9 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                     </clr-input-container>
                   </div>
                   <div class="edit-actions">
-                    <button class="btn btn-primary" type="button" (click)="saveEdit()">保存方案</button>
+                    <button class="btn btn-primary" type="button" (click)="saveEdit()">
+                      保存方案
+                    </button>
                   </div>
                 </div>
               } @else {
@@ -181,7 +184,9 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   </div>
                   <div>
                     <dt>当前门禁</dt>
-                    <dd>{{ pendingStage() ? stageLabel(pendingStage()!) + '待会签' : approvalGate() }}</dd>
+                    <dd>
+                      {{ pendingStage() ? stageLabel(pendingStage()!) + '待会签' : approvalGate() }}
+                    </dd>
                   </div>
                 </dl>
               }
@@ -252,6 +257,10 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
           </section>
         }
 
+        @case ('drill') {
+          <app-rollback-drill [changeId]="item.id" />
+        }
+
         @case ('execution') {
           <div class="content-grid execution-grid">
             <section class="surface">
@@ -261,9 +270,12 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   <span>执行中可逐项勾选，所有操作保留时间戳</span>
                 </div>
                 @if (item.status === 'approved') {
-                  <button class="btn btn-primary" type="button" (click)="startExecution()">
-                    开始执行
-                  </button>
+                  <div class="execute-gate">
+                    <span class="gate-hint">开始执行需回滚演练凭证放行</span>
+                    <button class="btn btn-primary" type="button" (click)="startExecution()">
+                      凭证放行执行
+                    </button>
+                  </div>
                 }
               </div>
               <div class="step-list">
@@ -294,7 +306,12 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   <h2>实时执行记录</h2>
                   <span>记录偏离并明确继续、暂停或回滚</span>
                 </div>
-                <a class="btn btn-sm" href="https://logs.example.internal/change/{{ item.id }}" target="_blank" rel="noopener">
+                <a
+                  class="btn btn-sm"
+                  href="https://logs.example.internal/change/{{ item.id }}"
+                  target="_blank"
+                  rel="noopener"
+                >
                   打开实时日志
                 </a>
               </div>
@@ -327,7 +344,9 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   </div>
                 </div>
                 <div class="completion-actions">
-                  <button class="btn" type="button" (click)="complete('rolled_back')">判定回滚</button>
+                  <button class="btn" type="button" (click)="complete('rolled_back')">
+                    判定回滚
+                  </button>
                   <button class="btn btn-primary" type="button" (click)="complete('completed')">
                     执行完成
                   </button>
@@ -428,9 +447,7 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   <p class="empty">当前状态不允许审批操作。</p>
                 }
               } @else {
-                <p class="approved-message">
-                  会签已完成。开始执行后审批记录自动冻结，不允许修改。
-                </p>
+                <p class="approved-message">会签已完成。开始执行后审批记录自动冻结，不允许修改。</p>
               }
             </section>
 
@@ -643,6 +660,22 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
         background: #eaf4f9;
         color: #215a78;
         font-size: 10px;
+      }
+
+      .nav-badge.warn-badge {
+        background: #fff7e6;
+        color: #7c5000;
+      }
+
+      .execute-gate {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .gate-hint {
+        color: #7c5000;
+        font-size: 11px;
       }
 
       .content-grid {
@@ -980,6 +1013,7 @@ export class ChangeDetailComponent {
 
   readonly changes = this.store.selectSignal(selectAllChanges);
   readonly change = computed(() => this.changes().find((item) => item.id === this.changeId));
+  readonly gate = this.store.selectSignal(selectExecutionGateByChangeId(this.changeId));
   readonly selectedTab = signal<DetailTab>('overview');
   readonly editing = signal(false);
   readonly draft = signal<ChangeRequest | null>(null);
@@ -992,6 +1026,7 @@ export class ChangeDetailComponent {
     { id: 'overview', label: '方案概览' },
     { id: 'dependency', label: '依赖关系' },
     { id: 'window', label: '窗口甘特' },
+    { id: 'drill', label: '回滚演练' },
     { id: 'execution', label: '执行记录' },
     { id: 'approval', label: '审批会签' },
     { id: 'audit', label: '审计复盘' },
@@ -1129,7 +1164,9 @@ export class ChangeDetailComponent {
       result === 'completed'
         ? '观察窗口内指标稳定，变更完成。'
         : '发现不可接受影响，按方案完成回滚。';
-    this.store.dispatch(ChangeRequestActions.completeExecution({ id: this.changeId, result, note }));
+    this.store.dispatch(
+      ChangeRequestActions.completeExecution({ id: this.changeId, result, note }),
+    );
   }
 
   exportRetrospective(): void {

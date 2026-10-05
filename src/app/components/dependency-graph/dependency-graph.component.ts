@@ -1,9 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import {
-  ChangeRequest,
-  RESOURCE_LABELS,
-  ResourceType,
-} from '../../models/change-request.model';
+import { ChangeRequest, RESOURCE_LABELS, ResourceType } from '../../models/change-request.model';
 
 interface GraphNode {
   id: string;
@@ -55,16 +51,9 @@ interface GraphEdge {
         }
         @for (node of nodes(); track node.id) {
           <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'">
-            <rect
-              width="150"
-              height="62"
-              rx="4"
-              [class.critical-node]="node.critical"
-            />
+            <rect width="150" height="62" rx="4" [class.critical-node]="node.critical" />
             <text x="14" y="24" class="node-name">{{ node.name }}</text>
-            <text x="14" y="45" class="node-type">
-              {{ label(node.type) }} · {{ node.id }}
-            </text>
+            <text x="14" y="45" class="node-type">{{ label(node.type) }} · {{ node.id }}</text>
           </g>
         }
       </svg>

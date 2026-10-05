@@ -6,7 +6,8 @@
     "start": "ng serve --port 18469",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "logic:check": "node node_modules/typescript/bin/tsc --ignoreConfig --ignoreDeprecations 6.0 src/app/models/change-request.model.ts src/app/models/rollback-drill.model.ts src/app/store/drill-factory.ts --outDir dist-test --module commonjs --target es2022 --moduleResolution bundler --skipLibCheck && node scripts/logic-check.js && rm -rf dist-test"
   },
   "private": true,
   "packageManager": "npm@10.9.8",

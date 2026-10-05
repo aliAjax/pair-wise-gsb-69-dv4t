@@ -150,8 +150,7 @@ export class WindowGanttComponent {
     return changes.map((change) => {
       const leftMinutes = (new Date(change.window.start).getTime() - start) / 60_000;
       const duration =
-        (new Date(change.window.end).getTime() - new Date(change.window.start).getTime()) /
-        60_000;
+        (new Date(change.window.end).getTime() - new Date(change.window.start).getTime()) / 60_000;
       const conflicts = changes.some(
         (candidate) =>
           candidate.id !== change.id &&

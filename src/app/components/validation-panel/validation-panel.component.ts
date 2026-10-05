@@ -1,9 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
-import {
-  ChangeRequest,
-  ValidationIssue,
-  validateChange,
-} from '../../models/change-request.model';
+import { ChangeRequest, ValidationIssue, validateChange } from '../../models/change-request.model';
 
 @Component({
   selector: 'app-validation-panel',

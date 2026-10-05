@@ -19,6 +19,7 @@ import {
   selectChangesError,
   selectChangesLoading,
 } from '../../store/change-request.selectors';
+import { selectBackfillQueue } from '../../store/rollback-drill.selectors';
 
 @Component({
   selector: 'app-dashboard',
@@ -53,10 +54,10 @@ import {
         <strong>{{ blockedCount() }}</strong>
         <small>依赖、冲突或回滚风险</small>
       </article>
-      <article>
-        <span>今日窗口</span>
-        <strong>{{ todayWindowCount() }}</strong>
-        <small>基于当前筛选数据</small>
+      <article class="warning">
+        <span>回滚凭证待补</span>
+        <strong>{{ backfillCount() }}</strong>
+        <small>旧方案无凭证，禁止开始执行</small>
       </article>
     </section>
 
@@ -101,11 +102,7 @@ import {
         </clr-select-container>
         <clr-select-container>
           <label>资源类型</label>
-          <select
-            clrSelect
-            [ngModel]="resourceType()"
-            (ngModelChange)="resourceType.set($event)"
-          >
+          <select clrSelect [ngModel]="resourceType()" (ngModelChange)="resourceType.set($event)">
             <option value="all">全部资源</option>
             @for (item of resourceTypes; track item.value) {
               <option [value]="item.value">{{ item.label }}</option>
@@ -146,7 +143,9 @@ import {
                   </a>
                 </td>
                 <td>
-                  <span class="status" [class]="change.status">{{ statusLabel(change.status) }}</span>
+                  <span class="status" [class]="change.status">{{
+                    statusLabel(change.status)
+                  }}</span>
                 </td>
                 <td>
                   <span class="risk" [class]="change.risk">{{ riskLabel(change.risk) }}</span>
@@ -185,6 +184,54 @@ import {
       </div>
       <app-window-gantt [changes]="filteredChanges()" />
     </section>
+
+    @if (backfillChanges().length) {
+      <section class="work-panel backfill-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>回滚演练凭证待补（旧方案）</h2>
+            <span
+              >这些方案在凭证机制上线前已存在，没有与当前版本绑定的演练凭证，补齐前不能开始执行。</span
+            >
+          </div>
+        </div>
+        <table class="change-table">
+          <thead>
+            <tr>
+              <th>变更</th>
+              <th>状态</th>
+              <th>负责人</th>
+              <th>门禁</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (change of backfillChanges(); track change.id) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/changes', change.id]" class="change-link">
+                    <span>{{ change.id }}</span>
+                    <strong>{{ change.title }}</strong>
+                  </a>
+                </td>
+                <td>
+                  <span class="status" [class]="change.status">{{
+                    statusLabel(change.status)
+                  }}</span>
+                </td>
+                <td>{{ change.owner }}</td>
+                <td><span class="issue-count">凭证待补</span></td>
+                <td>
+                  <a class="btn btn-sm btn-primary" [routerLink]="['/changes', change.id]">
+                    去补演练
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+    }
   `,
   styles: [
     `
@@ -239,6 +286,10 @@ import {
 
       .stats article.danger {
         border-top-color: #c21d00;
+      }
+
+      .stats article.warning {
+        border-top-color: #d0a251;
       }
 
       .stats span,
@@ -421,6 +472,9 @@ export class DashboardComponent {
   readonly changes = this.store.selectSignal(selectAllChanges);
   readonly loading = this.store.selectSignal(selectChangesLoading);
   readonly error = this.store.selectSignal(selectChangesError);
+  readonly backfillChanges = this.store.selectSignal(selectBackfillQueue);
+
+  readonly backfillCount = computed(() => this.backfillChanges().length);
 
   readonly query = signal('');
   readonly status = signal<ChangeStatus | 'all'>('all');
@@ -461,8 +515,10 @@ export class DashboardComponent {
       ).length,
   );
 
-  readonly todayWindowCount = computed(() =>
-    this.filteredChanges().filter((change) => change.window.start.startsWith('2026-09-29')).length,
+  readonly todayWindowCount = computed(
+    () =>
+      this.filteredChanges().filter((change) => change.window.start.startsWith('2026-09-29'))
+        .length,
   );
 
   reload(): void {

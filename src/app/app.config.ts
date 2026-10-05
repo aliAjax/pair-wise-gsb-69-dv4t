@@ -7,6 +7,8 @@ import { provideStore } from '@ngrx/store';
 import { routes } from './app.routes';
 import { ChangeRequestEffects } from './store/change-request.effects';
 import { changeRequestReducer } from './store/change-request.reducer';
+import { RollbackDrillEffects } from './store/rollback-drill.effects';
+import { rollbackDrillReducer } from './store/rollback-drill.reducer';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -14,7 +16,10 @@ export const appConfig: ApplicationConfig = {
     provideAnimationsAsync(),
     provideRouter(routes),
     provideHttpClient(),
-    provideStore({ changeRequests: changeRequestReducer }),
-    provideEffects(ChangeRequestEffects),
+    provideStore({
+      changeRequests: changeRequestReducer,
+      rollbackDrills: rollbackDrillReducer,
+    }),
+    provideEffects(ChangeRequestEffects, RollbackDrillEffects),
   ],
 };

@@ -1,11 +1,5 @@
 export type ChangeStatus =
-  | 'draft'
-  | 'submitted'
-  | 'approved'
-  | 'executing'
-  | 'completed'
-  | 'rolled_back'
-  | 'rejected';
+  'draft' | 'submitted' | 'approved' | 'executing' | 'completed' | 'rolled_back' | 'rejected';
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type ResourceType = 'datacenter' | 'rack' | 'network' | 'storage' | 'service';
@@ -185,7 +179,10 @@ export function isWindowOverlapping(left: ChangeWindow, right: ChangeWindow): bo
   return leftStart < rightEnd && rightStart < leftEnd;
 }
 
-export function validateChange(change: ChangeRequest, allChanges: ChangeRequest[]): ValidationIssue[] {
+export function validateChange(
+  change: ChangeRequest,
+  allChanges: ChangeRequest[],
+): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const resourceMap = new Map(change.resources.map((resource) => [resource.id, resource]));
 
@@ -278,11 +275,7 @@ export function validateChange(change: ChangeRequest, allChanges: ChangeRequest[
   return issues;
 }
 
-export function createAudit(
-  action: string,
-  detail: string,
-  actor = '当前用户',
-): AuditRecord {
+export function createAudit(action: string, detail: string, actor = '当前用户'): AuditRecord {
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     timestamp: new Date().toISOString(),

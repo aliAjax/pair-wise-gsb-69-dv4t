@@ -44,8 +44,7 @@ export class ChangeRequestService {
       '## 执行偏离',
       ...(change.deviations.length
         ? change.deviations.map(
-            (item) =>
-              `- ${item.recordedAt} ${item.owner} [${item.decision}] ${item.description}`,
+            (item) => `- ${item.recordedAt} ${item.owner} [${item.decision}] ${item.description}`,
           )
         : ['- 无']),
       '',

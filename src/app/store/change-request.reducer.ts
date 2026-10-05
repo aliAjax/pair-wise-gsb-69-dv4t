@@ -24,9 +24,11 @@ function touch(change: ChangeRequest): ChangeRequest {
 }
 
 function nextPendingStage(change: ChangeRequest): ApprovalStage | null {
-  return APPROVAL_ORDER.find((stage) =>
-    change.approvals.some((approval) => approval.stage === stage && approval.state === 'pending'),
-  ) ?? null;
+  return (
+    APPROVAL_ORDER.find((stage) =>
+      change.approvals.some((approval) => approval.stage === stage && approval.state === 'pending'),
+    ) ?? null
+  );
 }
 
 export const changeRequestReducer = createReducer(
@@ -58,10 +60,7 @@ export const changeRequestReducer = createReducer(
       item.id === change.id
         ? touch({
             ...change,
-            audit: [
-              createAudit('保存变更方案', '更新资源、步骤或窗口信息'),
-              ...change.audit,
-            ],
+            audit: [createAudit('保存变更方案', '更新资源、步骤或窗口信息'), ...change.audit],
           })
         : item,
     ),
@@ -82,7 +81,10 @@ export const changeRequestReducer = createReducer(
                 ? { ...approval, state: 'pending' }
                 : { ...approval, state: 'pending' },
             ),
-            audit: [createAudit('提交审批', '方案冻结后进入网络、系统、安全、业务顺序会签'), ...change.audit],
+            audit: [
+              createAudit('提交审批', '方案冻结后进入网络、系统、安全、业务顺序会签'),
+              ...change.audit,
+            ],
           })
         : change,
     ),
@@ -113,7 +115,10 @@ export const changeRequestReducer = createReducer(
         ...change,
         status: allApproved ? 'approved' : 'submitted',
         approvals,
-        audit: [createAudit('阶段会签', `${stage} 已由 ${approver} 批准：${comment}`), ...change.audit],
+        audit: [
+          createAudit('阶段会签', `${stage} 已由 ${approver} 批准：${comment}`),
+          ...change.audit,
+        ],
       });
     }),
   })),
@@ -135,12 +140,16 @@ export const changeRequestReducer = createReducer(
                   }
                 : approval,
             ),
-            audit: [createAudit('审批退回', `${stage} 由 ${approver} 退回：${comment}`), ...change.audit],
+            audit: [
+              createAudit('审批退回', `${stage} 由 ${approver} 退回：${comment}`),
+              ...change.audit,
+            ],
           })
         : change,
     ),
   })),
-  on(ChangeRequestActions.startExecution, (state, { id }) => ({
+  // startExecution 只作为门禁请求，真正的状态推进由 executionReleased 完成
+  on(ChangeRequestActions.executionReleased, (state, { id, credentialId }) => ({
     ...state,
     changes: state.changes.map((change) =>
       change.id === id && change.status === 'approved'
@@ -148,8 +157,25 @@ export const changeRequestReducer = createReducer(
             ...change,
             status: 'executing',
             approvals: change.approvals.map((approval) => ({ ...approval, state: 'frozen' })),
-            audit: [createAudit('开始执行', '审批记录已冻结，进入执行状态'), ...change.audit],
+            audit: [
+              createAudit(
+                '凭证放行执行',
+                `回滚演练凭证 ${credentialId} 与当前方案版本一致，审批记录冻结，进入执行状态`,
+              ),
+              ...change.audit,
+            ],
           })
+        : change,
+    ),
+  })),
+  on(ChangeRequestActions.executionBlocked, (state, { id, reason }) => ({
+    ...state,
+    changes: state.changes.map((change) =>
+      change.id === id
+        ? {
+            ...change,
+            audit: [createAudit('执行门禁拦截', reason), ...change.audit],
+          }
         : change,
     ),
   })),

@@ -104,19 +104,11 @@ import { selectAllChanges } from '../../store/change-request.selectors';
           </clr-input-container>
           <clr-input-container>
             <label>资源名称</label>
-            <input
-              clrInput
-              [ngModel]="resourceName()"
-              (ngModelChange)="resourceName.set($event)"
-            />
+            <input clrInput [ngModel]="resourceName()" (ngModelChange)="resourceName.set($event)" />
           </clr-input-container>
           <clr-select-container>
             <label>类型</label>
-            <select
-              clrSelect
-              [ngModel]="resourceType()"
-              (ngModelChange)="resourceType.set($event)"
-            >
+            <select clrSelect [ngModel]="resourceType()" (ngModelChange)="resourceType.set($event)">
               @for (type of resourceTypes; track type) {
                 <option [value]="type">{{ resourceLabel(type) }}</option>
               }
@@ -142,7 +134,11 @@ import { selectAllChanges } from '../../store/change-request.selectors';
                 <span>{{ resource.id }} · {{ resourceLabel(resource.type) }}</span>
               </div>
               <span>依赖：{{ resource.dependencies.join('、') || '无' }}</span>
-              <button class="btn btn-sm btn-link" type="button" (click)="removeResource(resource.id)">
+              <button
+                class="btn btn-sm btn-link"
+                type="button"
+                (click)="removeResource(resource.id)"
+              >
                 移除
               </button>
             </article>
@@ -461,10 +457,7 @@ export class NewChangeComponent {
     this.draft.update((draft) => ({ ...draft, [key]: value }));
   }
 
-  updateWindow(
-    key: 'start' | 'end',
-    value: string,
-  ): void {
+  updateWindow(key: 'start' | 'end', value: string): void {
     this.draft.update((draft) => ({
       ...draft,
       window: { ...draft.window, [key]: value },
