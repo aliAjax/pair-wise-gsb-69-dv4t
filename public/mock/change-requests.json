@@ -88,7 +88,8 @@
         "state": "approved",
         "approver": "陆成",
         "comment": "链路切换窗口和验证点符合要求。",
-        "decidedAt": "2026-09-29T02:15:00.000Z"
+        "decidedAt": "2026-09-29T02:15:00.000Z",
+        "planVersion": 2
       },
       {
         "stage": "system",
@@ -103,6 +104,51 @@
         "state": "pending"
       }
     ],
+    "planVersion": 2,
+    "drillBatches": [
+      {
+        "id": "DRILL-24031-1",
+        "sequence": 1,
+        "planVersion": 1,
+        "topologyDigest": "9c1f04a2",
+        "commandDigest": "71be63d0",
+        "windowDigest": "e58a2b41",
+        "planDigest": "b07d31c6",
+        "status": "voided",
+        "operator": "林珂",
+        "resourceIds": ["dc-east-1", "rack-a3", "sw-core-a", "svc-orders"],
+        "queuedAt": "2026-09-28T06:00:00.000Z",
+        "finishedAt": "2026-09-28T09:10:00.000Z",
+        "voidReason": "命令、窗口变化，方案版本推进至 v2，未执行批次作废"
+      },
+      {
+        "id": "DRILL-24031-2",
+        "sequence": 2,
+        "planVersion": 2,
+        "topologyDigest": "54c8a8fb",
+        "commandDigest": "afd2b3cb",
+        "windowDigest": "3623e1ed",
+        "planDigest": "03ddc9b0",
+        "status": "queued",
+        "operator": "林珂",
+        "resourceIds": ["dc-east-1", "rack-a3", "sw-core-a", "svc-orders"],
+        "queuedAt": "2026-09-29T01:28:00.000Z"
+      },
+      {
+        "id": "DRILL-24031-3",
+        "sequence": 3,
+        "planVersion": 2,
+        "topologyDigest": "54c8a8fb",
+        "commandDigest": "afd2b3cb",
+        "windowDigest": "3623e1ed",
+        "planDigest": "03ddc9b0",
+        "status": "conflict",
+        "operator": "赵宇",
+        "resourceIds": ["dc-east-1", "rack-a3", "sw-core-a", "svc-orders"],
+        "queuedAt": "2026-09-29T01:30:00.000Z",
+        "conflictReason": "值班员 林珂 的批次 DRILL-24031-2 已先行提交，本批次保留冲突"
+      }
+    ],
     "deviations": [],
     "audit": [
       {
@@ -113,11 +159,32 @@
         "detail": "网络负责人已批准。"
       },
       {
+        "id": "audit-3",
+        "timestamp": "2026-09-29T01:30:00.000Z",
+        "actor": "赵宇",
+        "action": "演练提交冲突保留",
+        "detail": "赵宇 提交 DRILL-24031-3：值班员 林珂 的批次 DRILL-24031-2 已先行提交，本批次保留冲突"
+      },
+      {
+        "id": "audit-4",
+        "timestamp": "2026-09-29T01:28:00.000Z",
+        "actor": "林珂",
+        "action": "演练批次排队",
+        "detail": "林珂 提交批次 DRILL-24031-2（方案 v2），占用隔离链路，按共享资源排队"
+      },
+      {
         "id": "audit-2",
         "timestamp": "2026-09-28T09:40:00.000Z",
         "actor": "周启明",
         "action": "提交审批",
         "detail": "提交网络、系统、安全、业务顺序会签。"
+      },
+      {
+        "id": "audit-5",
+        "timestamp": "2026-09-28T09:10:00.000Z",
+        "actor": "周启明",
+        "action": "方案版本推进",
+        "detail": "命令、窗口变化，版本推进至 v2，未执行演练批次作废，已执行批次保留原凭证"
       }
     ],
     "createdAt": "2026-09-27T08:20:00.000Z",

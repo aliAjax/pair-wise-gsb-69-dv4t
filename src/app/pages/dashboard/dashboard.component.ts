@@ -13,6 +13,7 @@ import {
   STATUS_LABELS,
   validateChange,
 } from '../../models/change-request.model';
+import { credentialPendingReason } from '../../models/rollback-drill.model';
 import { ChangeRequestActions } from '../../store/change-request.actions';
 import {
   selectAllChanges,
@@ -57,6 +58,16 @@ import {
         <span>今日窗口</span>
         <strong>{{ todayWindowCount() }}</strong>
         <small>基于当前筛选数据</small>
+      </article>
+      <article>
+        <span>演练中</span>
+        <strong>{{ runningDrillCount() }}</strong>
+        <small>占用隔离链路</small>
+      </article>
+      <article class="danger">
+        <span>凭证待补</span>
+        <strong>{{ credentialPendingChanges().length }}</strong>
+        <small>不能开始执行</small>
       </article>
     </section>
 
@@ -176,6 +187,50 @@ import {
       </div>
     </section>
 
+    <section class="work-panel" aria-label="演练凭证待补">
+      <div class="panel-heading">
+        <div>
+          <h2>演练凭证待补</h2>
+          <span>旧方案没有凭证的列入待补，不能开始执行</span>
+        </div>
+      </div>
+      <div class="change-table-wrap">
+        <table class="change-table">
+          <thead>
+            <tr>
+              <th>变更</th>
+              <th>状态</th>
+              <th>方案版本</th>
+              <th>待补原因</th>
+              <th>演练批次</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (change of credentialPendingChanges(); track change.id) {
+              <tr>
+                <td>
+                  <a [routerLink]="['/changes', change.id]" class="change-link">
+                    <span>{{ change.id }}</span>
+                    <strong>{{ change.title }}</strong>
+                  </a>
+                </td>
+                <td>
+                  <span class="status" [class]="change.status">{{ statusLabel(change.status) }}</span>
+                </td>
+                <td>v{{ change.planVersion }}</td>
+                <td>{{ credentialPendingLabel(change.id) }}</td>
+                <td>{{ change.drillBatches.length }} 个</td>
+              </tr>
+            } @empty {
+              <tr>
+                <td colspan="5" class="empty-row">所有待执行方案均已持有有效演练凭证。</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="work-panel">
       <div class="panel-heading">
         <div>
@@ -221,7 +276,7 @@ import {
 
       .stats {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
         gap: 1px;
         margin-bottom: 22px;
         border: 1px solid #d7d7d7;
@@ -461,6 +516,21 @@ export class DashboardComponent {
       ).length,
   );
 
+  readonly credentialPendingChanges = computed(() =>
+    this.changes().filter(
+      (change) =>
+        ['draft', 'submitted', 'approved', 'rejected'].includes(change.status) &&
+        credentialPendingReason(change) !== null,
+    ),
+  );
+
+  readonly runningDrillCount = computed(
+    () =>
+      this.changes().flatMap((change) =>
+        change.drillBatches.filter((batch) => batch.status === 'running'),
+      ).length,
+  );
+
   readonly todayWindowCount = computed(() =>
     this.filteredChanges().filter((change) => change.window.start.startsWith('2026-09-29')).length,
   );
@@ -484,5 +554,15 @@ export class DashboardComponent {
 
   riskLabel(risk: 'low' | 'medium' | 'high' | 'critical'): string {
     return RISK_LABELS[risk];
+  }
+
+  credentialPendingLabel(changeId: string): string {
+    const change = this.changes().find((item) => item.id === changeId);
+    if (!change) {
+      return '';
+    }
+    return credentialPendingReason(change) === 'stale'
+      ? '方案已变更，原凭证失效'
+      : '从未签发演练凭证';
   }
 }

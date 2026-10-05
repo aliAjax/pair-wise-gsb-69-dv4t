@@ -1,3 +1,5 @@
+import type { DrillBatch, DrillCredential } from './rollback-drill.model';
+
 export type ChangeStatus =
   | 'draft'
   | 'submitted'
@@ -46,6 +48,7 @@ export interface ApprovalRecord {
   approver?: string;
   decidedAt?: string;
   comment?: string;
+  planVersion?: number;
 }
 
 export interface DeviationRecord {
@@ -78,6 +81,9 @@ export interface ChangeRequest {
   approvals: ApprovalRecord[];
   deviations: DeviationRecord[];
   audit: AuditRecord[];
+  planVersion: number;
+  drillBatches: DrillBatch[];
+  activeCredential?: DrillCredential;
   createdAt: string;
   updatedAt: string;
 }
@@ -167,8 +173,23 @@ export function createEmptyChange(): ChangeRequest {
     approvals: createEmptyApprovals(),
     deviations: [],
     audit: [],
+    planVersion: 1,
+    drillBatches: [],
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
+  };
+}
+
+/**
+ * 旧方案没有演练批次与凭证字段，迁移为版本 1、空批次；
+ * 缺少凭证的方案会列入待补，不能开始执行。
+ */
+export function migrateChange(change: ChangeRequest): ChangeRequest {
+  return {
+    ...change,
+    planVersion: change.planVersion ?? 1,
+    drillBatches: change.drillBatches ?? [],
+    activeCredential: change.activeCredential,
   };
 }
 

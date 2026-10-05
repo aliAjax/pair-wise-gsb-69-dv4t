@@ -26,11 +26,20 @@ import {
   STATUS_LABELS,
   validateChange,
 } from '../../models/change-request.model';
+import {
+  DRILL_STATUS_LABELS,
+  DrillBatch,
+  DrillBatchStatus,
+  DrillBlocker,
+  computePlanDigests,
+  credentialPendingReason,
+  drillQueueBlockers,
+} from '../../models/rollback-drill.model';
 import { ChangeRequestService } from '../../services/change-request.service';
 import { ChangeRequestActions } from '../../store/change-request.actions';
 import { selectAllChanges } from '../../store/change-request.selectors';
 
-type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval' | 'audit';
+type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'drill' | 'approval' | 'audit';
 
 @Component({
   selector: 'app-change-detail',
@@ -86,6 +95,9 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
             {{ tab.label }}
             @if (tab.id === 'approval' && pendingStage(); as stage) {
               <span class="nav-badge">{{ stageLabel(stage) }}</span>
+            }
+            @if (tab.id === 'drill' && credentialState() !== 'valid') {
+              <span class="nav-badge warn">{{ credentialState() === 'missing' ? '待补' : '失效' }}</span>
             }
           </button>
         }
@@ -261,9 +273,25 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                   <span>执行中可逐项勾选，所有操作保留时间戳</span>
                 </div>
                 @if (item.status === 'approved') {
-                  <button class="btn btn-primary" type="button" (click)="startExecution()">
-                    开始执行
-                  </button>
+                  <div class="execution-gate">
+                    <button
+                      class="btn btn-primary"
+                      type="button"
+                      (click)="startExecution()"
+                      [disabled]="credentialState() !== 'valid'"
+                    >
+                      开始执行
+                    </button>
+                    @if (credentialState() !== 'valid') {
+                      <p class="gate-hint">
+                        {{
+                          credentialState() === 'missing'
+                            ? '演练凭证待补：完成一次回滚演练并签发凭证后才能开始执行。'
+                            : '拓扑、命令或窗口已变化，原演练凭证失效，需重新演练签发。'
+                        }}
+                      </p>
+                    }
+                  </div>
                 }
               </div>
               <div class="step-list">
@@ -351,6 +379,175 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
           </div>
         }
 
+        @case ('drill') {
+          <div class="content-grid drill-grid">
+            <section class="surface">
+              <div class="surface-heading">
+                <div>
+                  <h2>方案版本与演练凭证</h2>
+                  <span>回滚步骤、资源依赖、演练批次与会签绑定同一版本</span>
+                </div>
+                <span class="version-chip">方案 v{{ item.planVersion }}</span>
+              </div>
+              <dl class="facts">
+                <div>
+                  <dt>拓扑摘要</dt>
+                  <dd class="mono">{{ digests()?.topology }}</dd>
+                </div>
+                <div>
+                  <dt>命令摘要</dt>
+                  <dd class="mono">{{ digests()?.command }}</dd>
+                </div>
+                <div>
+                  <dt>窗口摘要</dt>
+                  <dd class="mono">{{ digests()?.window }}</dd>
+                </div>
+                <div>
+                  <dt>版本摘要</dt>
+                  <dd class="mono">{{ digests()?.digest }}</dd>
+                </div>
+              </dl>
+              <div class="credential-box" [class]="credentialState()">
+                @if (credentialState() === 'valid') {
+                  <strong>有效凭证 {{ item.activeCredential?.id }}</strong>
+                  <p>
+                    {{ item.activeCredential?.issuedBy }} 于
+                    {{ item.activeCredential?.issuedAt | date: 'MM-dd HH:mm' }}
+                    签发，冻结拓扑与命令摘要，仅该凭证可放行执行。
+                  </p>
+                } @else if (credentialState() === 'stale') {
+                  <strong>凭证已失效</strong>
+                  <p>
+                    原凭证 {{ item.activeCredential?.id }} 绑定摘要
+                    {{ item.activeCredential?.digest }}，与当前方案版本不一致，需重新演练签发。
+                  </p>
+                } @else {
+                  <strong>演练凭证待补</strong>
+                  <p>旧方案尚未签发演练凭证，已列入待补，不能开始执行。</p>
+                }
+              </div>
+            </section>
+
+            <section class="surface">
+              <div class="surface-heading">
+                <div>
+                  <h2>提交演练批次</h2>
+                  <span>演练占用隔离链路，与正式变更抢同一批资源</span>
+                </div>
+              </div>
+              @if (['draft', 'submitted', 'approved', 'rejected'].includes(item.status)) {
+                <div class="drill-submit">
+                  <clr-select-container>
+                    <label>值班员</label>
+                    <select
+                      clrSelect
+                      [ngModel]="drillOperator()"
+                      (ngModelChange)="drillOperator.set($event)"
+                    >
+                      @for (person of item.onCall; track person) {
+                        <option [value]="person">{{ person }}</option>
+                      }
+                    </select>
+                  </clr-select-container>
+                  <button class="btn btn-primary" type="button" (click)="submitDrill()">
+                    提交演练批次
+                  </button>
+                </div>
+                <p class="hint">
+                  两人同时提交同一方案版本时先到先生效，后到的批次保留为冲突记录；
+                  拓扑、命令或窗口一变，未执行的批次自动作废。
+                </p>
+              } @else {
+                <p class="empty">当前状态不允许提交演练批次。</p>
+              }
+            </section>
+
+            <section class="surface span-2">
+              <div class="surface-heading">
+                <div>
+                  <h2>演练批次</h2>
+                  <span>{{ item.drillBatches.length }} 个批次，按共享资源排队</span>
+                </div>
+              </div>
+              <div class="batch-list">
+                @for (batch of batchesDesc(item); track batch.id) {
+                  <article class="batch" [class]="batch.status">
+                    <header>
+                      <strong>{{ batch.id }}</strong>
+                      <span class="batch-status" [class]="batch.status">
+                        {{ drillStatusLabel(batch.status) }}
+                      </span>
+                      <span>方案 v{{ batch.planVersion }}</span>
+                      <span>{{ batch.operator }}</span>
+                      <time>{{ batch.queuedAt | date: 'MM-dd HH:mm' }}</time>
+                    </header>
+                    <div class="batch-body">
+                      <span class="mono">绑定摘要 {{ batch.planDigest }}</span>
+                      @if (batch.status === 'queued') {
+                        @if (blockersFor(batch).length > 0) {
+                          <ul class="blockers">
+                            @for (blocker of blockersFor(batch); track blocker.sourceId + blocker.detail) {
+                              <li>{{ blocker.detail }}</li>
+                            }
+                          </ul>
+                        } @else {
+                          <span class="ready">共享资源空闲，可开始演练</span>
+                        }
+                      }
+                      @if (batch.status === 'running') {
+                        <span class="ready">演练中，占用隔离链路</span>
+                      }
+                      @if (batch.credential) {
+                        <p class="credential-line">
+                          凭证 {{ batch.credential.id }} · 冻结摘要 {{ batch.credential.digest }} ·
+                          {{ batch.credential.issuedAt | date: 'MM-dd HH:mm' }} 签发
+                        </p>
+                      }
+                      @if (batch.voidReason) {
+                        <p class="batch-note">{{ batch.voidReason }}</p>
+                      }
+                      @if (batch.conflictReason) {
+                        <p class="batch-note">{{ batch.conflictReason }}</p>
+                      }
+                      @if (batch.note) {
+                        <p class="batch-note">{{ batch.note }}</p>
+                      }
+                    </div>
+                    @if (batch.status === 'queued' || batch.status === 'running') {
+                      <div class="batch-actions">
+                        @if (batch.status === 'queued') {
+                          <button
+                            class="btn btn-sm"
+                            type="button"
+                            [disabled]="blockersFor(batch).length > 0"
+                            (click)="startDrill(batch.id)"
+                          >
+                            开始演练
+                          </button>
+                        }
+                        @if (batch.status === 'running') {
+                          <button class="btn btn-sm" type="button" (click)="completeDrill(batch.id, 'failed')">
+                            演练失败
+                          </button>
+                          <button
+                            class="btn btn-sm btn-primary"
+                            type="button"
+                            (click)="completeDrill(batch.id, 'succeeded')"
+                          >
+                            演练成功
+                          </button>
+                        }
+                      </div>
+                    }
+                  </article>
+                } @empty {
+                  <p class="empty">尚无演练批次。旧方案没有凭证的列入待补，不能开始执行。</p>
+                }
+              </div>
+            </section>
+          </div>
+        }
+
         @case ('approval') {
           <div class="content-grid approval-grid">
             <section class="surface">
@@ -382,6 +579,7 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
                       @if (approval.approver) {
                         <small>
                           {{ approval.approver }} · {{ approval.decidedAt | date: 'MM-dd HH:mm' }}
+                          · 方案 v{{ approval.planVersion ?? 1 }}
                         </small>
                       }
                     </div>
@@ -643,6 +841,181 @@ type DetailTab = 'overview' | 'dependency' | 'window' | 'execution' | 'approval'
         background: #eaf4f9;
         color: #215a78;
         font-size: 10px;
+      }
+
+      .nav-badge.warn {
+        background: #fbece8;
+        color: #8e260f;
+      }
+
+      .execution-gate {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+      }
+
+      .gate-hint {
+        max-width: 320px;
+        margin: 0;
+        color: #8e260f;
+        font-size: 12px;
+        text-align: right;
+      }
+
+      .version-chip {
+        padding: 3px 10px;
+        border: 1px solid #5688a5;
+        background: #eaf4f9;
+        color: #1d5877;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .mono {
+        font-family: 'Metropolis', monospace, sans-serif;
+        letter-spacing: 0.4px;
+      }
+
+      .credential-box {
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-left: 3px solid #9a9a9a;
+        background: #f4f6f7;
+      }
+
+      .credential-box.valid {
+        border-left-color: #4b8d65;
+        background: #edf7f0;
+        color: #245f3d;
+      }
+
+      .credential-box.stale {
+        border-left-color: #d99000;
+        background: #fdf3e0;
+        color: #7c5000;
+      }
+
+      .credential-box.missing {
+        border-left-color: #c21d00;
+        background: #fbece8;
+        color: #8e260f;
+      }
+
+      .credential-box p {
+        margin: 6px 0 0;
+        font-size: 12px;
+      }
+
+      .drill-submit {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: end;
+        gap: 14px;
+        padding-top: 16px;
+      }
+
+      .hint {
+        margin: 12px 0 0;
+        color: #6b6b6b;
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .batch-list {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .batch {
+        padding: 14px 2px;
+        border-bottom: 1px solid #e6e6e6;
+      }
+
+      .batch:last-child {
+        border-bottom: 0;
+      }
+
+      .batch header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .batch header > span,
+      .batch header time {
+        color: #6b6b6b;
+        font-size: 12px;
+      }
+
+      .batch-status {
+        padding: 2px 8px;
+        border: 1px solid #9a9a9a;
+        background: #f3f3f3;
+        color: #474747;
+        font-size: 11px;
+      }
+
+      .batch-status.queued {
+        border-color: #5688a5;
+        background: #eaf4f9;
+        color: #1d5877;
+      }
+
+      .batch-status.running {
+        border-color: #d99000;
+        background: #fdf3e0;
+        color: #7c5000;
+      }
+
+      .batch-status.succeeded {
+        border-color: #4b8d65;
+        background: #e8f5ed;
+        color: #245f3d;
+      }
+
+      .batch-status.failed,
+      .batch-status.voided,
+      .batch-status.conflict {
+        border-color: #d58d7e;
+        background: #fbece8;
+        color: #8e260f;
+      }
+
+      .batch-body {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        margin-top: 8px;
+        color: #5f5f5f;
+        font-size: 12px;
+      }
+
+      .blockers {
+        margin: 0;
+        padding-left: 18px;
+        color: #8e260f;
+      }
+
+      .ready {
+        color: #245f3d;
+      }
+
+      .credential-line {
+        margin: 0;
+        color: #245f3d;
+      }
+
+      .batch-note {
+        margin: 0;
+      }
+
+      .batch-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 10px;
       }
 
       .content-grid {
@@ -993,6 +1366,7 @@ export class ChangeDetailComponent {
     { id: 'dependency', label: '依赖关系' },
     { id: 'window', label: '窗口甘特' },
     { id: 'execution', label: '执行记录' },
+    { id: 'drill', label: '回滚演练' },
     { id: 'approval', label: '审批会签' },
     { id: 'audit', label: '审计复盘' },
   ];
@@ -1017,6 +1391,21 @@ export class ChangeDetailComponent {
     }
     return item.approvals.find((approval) => approval.state === 'pending')?.stage ?? null;
   });
+
+  readonly digests = computed(() => {
+    const item = this.change();
+    return item ? computePlanDigests(item) : null;
+  });
+
+  readonly credentialState = computed<'valid' | 'missing' | 'stale'>(() => {
+    const item = this.change();
+    if (!item) {
+      return 'missing';
+    }
+    return credentialPendingReason(item) ?? 'valid';
+  });
+
+  readonly drillOperator = signal('');
 
   beginEdit(): void {
     const item = this.change();
@@ -1101,7 +1490,52 @@ export class ChangeDetailComponent {
   }
 
   startExecution(): void {
+    if (this.credentialState() !== 'valid') {
+      return;
+    }
     this.store.dispatch(ChangeRequestActions.startExecution({ id: this.changeId }));
+  }
+
+  submitDrill(): void {
+    const item = this.change();
+    if (!item) {
+      return;
+    }
+    const operator = this.drillOperator() || item.onCall[0] || '当前用户';
+    this.store.dispatch(
+      ChangeRequestActions.submitDrillBatch({
+        id: this.changeId,
+        operator,
+        baseVersion: item.planVersion,
+      }),
+    );
+  }
+
+  startDrill(batchId: string): void {
+    this.store.dispatch(ChangeRequestActions.startDrillBatch({ id: this.changeId, batchId }));
+  }
+
+  completeDrill(batchId: string, result: 'succeeded' | 'failed'): void {
+    const note =
+      result === 'succeeded'
+        ? '回滚步骤在隔离链路演练通过，拓扑与命令摘要已冻结。'
+        : '演练未通过，需修正回滚方案后重新提交批次。';
+    this.store.dispatch(
+      ChangeRequestActions.completeDrillBatch({ id: this.changeId, batchId, result, note }),
+    );
+  }
+
+  blockersFor(batch: DrillBatch): DrillBlocker[] {
+    const item = this.change();
+    return item ? drillQueueBlockers(batch, item, this.changes()) : [];
+  }
+
+  batchesDesc(change: ChangeRequest): DrillBatch[] {
+    return [...change.drillBatches].sort((left, right) => right.sequence - left.sequence);
+  }
+
+  drillStatusLabel(status: DrillBatchStatus): string {
+    return DRILL_STATUS_LABELS[status];
   }
 
   toggleStep(stepId: string): void {
@@ -1195,7 +1629,7 @@ export class ChangeDetailComponent {
       return '-';
     }
     if (item.status === 'approved') {
-      return '已批准，等待执行';
+      return this.credentialState() === 'valid' ? '已批准，凭证可放行执行' : '已批准，演练凭证待补';
     }
     if (['executing', 'completed', 'rolled_back'].includes(item.status)) {
       return '审批已冻结';
